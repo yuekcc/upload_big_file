@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "watch": "esbuild src/index.js --servedir=./ --outdir=dist --bundle"
+    "build": "esbuild src/index.js src/hashing_worker.ts --outdir=dist --bundle",
+    "serve": "esbuild src/index.js src/hashing_worker.ts --servedir=./ --outdir=dist --bundle"
   },
   "author": "yukecc",
   "license": "MIT",

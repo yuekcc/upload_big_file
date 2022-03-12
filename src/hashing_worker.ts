@@ -1,6 +1,7 @@
 import { createBLAKE3 } from 'hash-wasm';
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2mb
+const DEFAULT_MAX_SENDER = 4;
 
 interface Chunk {
   chunkIndex: number;
@@ -8,12 +9,34 @@ interface Chunk {
   sample: Blob[];
 }
 
+interface UploadOptions {
+  maxSender?: number;
+  endpoint: string;
+}
+
+interface UploadMessage {
+  name: string;
+  file?: File;
+  jobId?: string;
+  options?: UploadOptions;
+}
+
+interface Job {
+  id: string;
+  file: File;
+  chunks: Chunk[];
+  chunksLength: number;
+  hash: string;
+  sampleHash: string;
+  options: UploadOptions;
+}
+
 function fetchSample(blob: Blob): Blob[] {
   const len = blob.size;
   return [blob.slice(0, 2), blob.slice(len / 2, 2), blob.slice(len - 2)];
 }
 
-function makeFileChunks(file: File): Chunk[] {
+function makeFileChunks(file: Blob): Chunk[] {
   const list: Chunk[] = [];
   let cur = 0;
   let chunkIndex = 0;
@@ -49,34 +72,29 @@ async function makeSampledFileHash(chunkList: Chunk[]): Promise<string> {
   return hash(chunkList.map(it => it.sample).flat(Infinity) as Blob[]);
 }
 
-interface Job {
-  id: string;
-  file: File;
-  chunks: Chunk[];
-  chunksLength: number;
-  hash: string;
-  sampleHash: string;
-  options: Record<string, any>;
-}
 
-async function makeUploadJob(file: File, options: Record<string, any>): Promise<Job> {
+
+async function makeUploadJob(file: File, options: UploadOptions): Promise<Job> {
   const chunks = makeFileChunks(file);
 
+  const sampleHash = await makeSampledFileHash(chunks);
+  const hash = await makeFullFileHash(chunks);
+
   const result: Job = {
-    id: crypto.randomUUID(),
+    id: hash,
     file,
     chunks,
     chunksLength: chunks.length,
-    hash: await makeFullFileHash(chunks),
-    sampleHash: await makeSampledFileHash(chunks),
+    hash,
+    sampleHash,
     options,
   };
 
   return result;
 }
 
-function makeGroup(list = [], size = 1) {
-  const result = [];
+function splitGroups<T>(list: Array<T>, size: number): Array<Array<T>> {
+  const result: Array<Array<T>> = [];
 
   let cur = 0;
   while (cur < list.length) {
@@ -88,19 +106,19 @@ function makeGroup(list = [], size = 1) {
 }
 
 // TODO 改用 Fetch
-async function sendChunkInGroups(endpoint: string, group = []): Promise<void> {
+async function sendChunks(endpoint: string, chunks: Chunk[]): Promise<void> {
   return new Promise(resolve =>
     setTimeout(() => {
-      const ids = group.map(it => it.chunkIndex);
-      console.log('#sendChunkInGroups', ids);
+      const ids = chunks.map(it => it.chunkIndex);
+      console.log('#sendChunkInGroups', endpoint, ids);
       resolve();
-    }, 1000),
+    }, 500),
   );
 }
 
 const jobList: Record<string, Job> = {};
 
-async function addJob(file, options): Promise<void> {
+async function addJob(file: File, options: UploadOptions): Promise<void> {
   const job = await makeUploadJob(file, options);
   // TODO 处理重复上传
   jobList[job.hash] = job;
@@ -121,17 +139,16 @@ async function startUpload(jobId: string) {
   const ts = Date.now();
   const job = jobList[jobId];
 
-  const maxSender = job.options.maxSender || 3;
+  const maxSender = job.options.maxSender || DEFAULT_MAX_SENDER;
   const endpoint = job.options.endpoint;
 
-  const groupedChunk = makeGroup(job.chunks, maxSender);
-  console.log('groupedChunk', groupedChunk);
+  const grouped = splitGroups(job.chunks, maxSender);
 
-  for (const group of groupedChunk) {
-    await sendChunkInGroups(endpoint, group);
+  for (const group of grouped) {
+    await sendChunks(endpoint, group);
     postMessage({
       name: 'process',
-      data: { groupsCount: groupedChunk.length, uploadedIds: group.map(it => it.chunkIndex) },
+      data: { groupsLength: grouped.length, uploadedIds: group.map(it => it.chunkIndex) },
     });
   }
 
@@ -147,22 +164,15 @@ async function startUpload(jobId: string) {
   });
 }
 
-interface UploadMessage {
-  name: string;
-  file?: File;
-  jobId?: string;
-  options?: { maxSender: number; endpoint: string };
-}
-
-onmessage = async function (e: MessageEvent<UploadMessage>) {
+onmessage = function (e: MessageEvent<UploadMessage>) {
   const { name, jobId, file, options } = e.data || {};
 
-  if (name === 'select_file') {
-    addJob(file!, options!);
+  if (name === 'select_file' && file && options) {
+    addJob(file, options);
     return;
   }
 
-  if (name === 'start_upload') {
+  if (name === 'start_upload' && jobId) {
     startUpload(jobId);
     return;
   }

@@ -25,7 +25,6 @@ async function selectFile(e) {
     name: 'select_file',
     file,
     options: {
-      maxSender: 3,
       endpoint: '/upload',
     },
   });
@@ -45,3 +44,10 @@ function sendFile() {
 
 document.getElementById('file').addEventListener('change', selectFile);
 document.getElementById('send').addEventListener('click', sendFile);
+
+setInterval(() => {
+  const el = document.getElementsByClassName('counter')[0];
+  if (el) {
+    el.textContent = Number(el.textContent) + 1;
+  }
+}, 1000);

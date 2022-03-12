@@ -4,6 +4,7 @@
     "target": "esnext",
     "jsx": "preserve",
     "strictFunctionTypes": true,
+    "strict": true,
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {

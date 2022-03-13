@@ -1,6 +1,6 @@
 let uploadWorker = null;
 if (!uploadWorker) {
-  uploadWorker = new Worker('dist/hashing_worker.js');
+  uploadWorker = new Worker('dist/upload_worker.js');
 }
 
 let jobId = null;
